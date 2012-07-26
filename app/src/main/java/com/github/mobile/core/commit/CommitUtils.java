@@ -16,10 +16,17 @@
 package com.github.mobile.core.commit;
 
 import android.text.TextUtils;
+import android.widget.ImageView;
 
+import com.github.mobile.ui.StyledText;
+import com.github.mobile.util.AvatarLoader;
+
+import java.text.NumberFormat;
+import java.util.Collection;
 import java.util.Date;
 
 import org.eclipse.egit.github.core.Commit;
+import org.eclipse.egit.github.core.CommitFile;
 import org.eclipse.egit.github.core.CommitUser;
 import org.eclipse.egit.github.core.RepositoryCommit;
 import org.eclipse.egit.github.core.User;
@@ -28,6 +35,8 @@ import org.eclipse.egit.github.core.User;
  * Utilities for working with commits
  */
 public class CommitUtils {
+
+    private static NumberFormat FORMAT = NumberFormat.getIntegerInstance();
 
     private static final int LENGTH = 10;
 
@@ -100,10 +109,29 @@ public class CommitUtils {
     }
 
     /**
-     * Get author date of commit
+     * Get committer of commit
      * <p>
      * This checks both the {@link RepositoryCommit} and the underlying
      * {@link Commit} to retrieve a name
+     *
+     * @param commit
+     * @return committer name or null if missing
+     */
+    public static String getCommitter(final RepositoryCommit commit) {
+        User committer = commit.getCommitter();
+        if (committer != null)
+            return committer.getLogin();
+
+        Commit rawCommit = commit.getCommit();
+        if (rawCommit == null)
+            return null;
+
+        CommitUser commitCommitter = rawCommit.getCommitter();
+        return commitCommitter != null ? commitCommitter.getName() : null;
+    }
+
+    /**
+     * Get author date of commit
      *
      * @param commit
      * @return author name or null if missing
@@ -115,5 +143,100 @@ public class CommitUtils {
 
         CommitUser commitAuthor = rawCommit.getAuthor();
         return commitAuthor != null ? commitAuthor.getDate() : null;
+    }
+
+    /**
+     * Get committer date of commit
+     *
+     * @param commit
+     * @return author name or null if missing
+     */
+    public static Date getCommiterDate(final RepositoryCommit commit) {
+        Commit rawCommit = commit.getCommit();
+        if (rawCommit == null)
+            return null;
+
+        CommitUser commitCommiter = rawCommit.getCommitter();
+        return commitCommiter != null ? commitCommiter.getDate() : null;
+    }
+
+    /**
+     * Bind commit author avatar to image view
+     *
+     * @param commit
+     * @param avatars
+     * @param view
+     * @return view
+     */
+    public static ImageView bindAuthor(final RepositoryCommit commit,
+            final AvatarLoader avatars, final ImageView view) {
+        User author = commit.getAuthor();
+        if (author != null)
+            avatars.bind(view, author);
+        else {
+            Commit rawCommit = commit.getCommit();
+            if (rawCommit != null)
+                avatars.bind(view, rawCommit.getAuthor());
+        }
+        return view;
+    }
+
+    /**
+     * Bind commit committer avatar to image view
+     *
+     * @param commit
+     * @param avatars
+     * @param view
+     * @return view
+     */
+    public static ImageView bindCommitter(final RepositoryCommit commit,
+            final AvatarLoader avatars, final ImageView view) {
+        User committer = commit.getCommitter();
+        if (committer != null)
+            avatars.bind(view, committer);
+        else {
+            Commit rawCommit = commit.getCommit();
+            if (rawCommit != null)
+                avatars.bind(view, rawCommit.getCommitter());
+        }
+        return view;
+    }
+
+    /**
+     * Format stats into {@link StyledText}
+     *
+     * @param files
+     * @return styled text
+     */
+    public static StyledText formatStats(final Collection<CommitFile> files) {
+        StyledText fileDetails = new StyledText();
+        int added = 0;
+        int deleted = 0;
+        int changed = 0;
+        if (files != null)
+            for (CommitFile file : files) {
+                added += file.getAdditions();
+                deleted += file.getDeletions();
+                changed++;
+            }
+
+        if (changed > 1)
+            fileDetails.append(FORMAT.format(changed)).append(" changed files");
+        else
+            fileDetails.append("1 changed file");
+        fileDetails.append(" with ");
+
+        if (added != 1)
+            fileDetails.append(FORMAT.format(added)).append(" additions");
+        else
+            fileDetails.append("1 addition ");
+        fileDetails.append(" and ");
+
+        if (deleted != 1)
+            fileDetails.append(FORMAT.format(deleted)).append(" deletions");
+        else
+            fileDetails.append("1 deletion");
+
+        return fileDetails;
     }
 }

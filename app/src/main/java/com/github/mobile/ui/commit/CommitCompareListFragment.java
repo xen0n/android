@@ -18,6 +18,7 @@ package com.github.mobile.ui.commit;
 import static com.github.mobile.Intents.EXTRA_BASE;
 import static com.github.mobile.Intents.EXTRA_HEAD;
 import static com.github.mobile.Intents.EXTRA_REPOSITORY;
+import android.accounts.Account;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -29,17 +30,18 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import com.github.mobile.R.id;
+import com.github.mobile.R.string;
 import com.github.mobile.core.commit.CommitCompareTask;
+import com.github.mobile.core.commit.CommitUtils;
 import com.github.mobile.ui.DialogFragment;
 import com.github.mobile.ui.HeaderFooterListAdapter;
-import com.github.mobile.ui.StyledText;
 import com.github.mobile.util.AvatarLoader;
+import com.github.mobile.util.ToastUtils;
 import com.github.mobile.util.ViewUtils;
 import com.google.inject.Inject;
 import com.viewpagerindicator.R.layout;
 
 import java.text.MessageFormat;
-import java.text.NumberFormat;
 import java.util.Collections;
 import java.util.List;
 
@@ -56,9 +58,6 @@ import roboguice.inject.InjectView;
  */
 public class CommitCompareListFragment extends DialogFragment implements
         OnItemClickListener {
-
-    private static final NumberFormat FORMAT = NumberFormat
-            .getIntegerInstance();
 
     private DiffStyler diffStyler;
 
@@ -94,8 +93,9 @@ public class CommitCompareListFragment extends DialogFragment implements
         new CommitCompareTask(getActivity(), repository, base, head) {
 
             @Override
-            protected RepositoryCommitCompare run() throws Exception {
-                RepositoryCommitCompare compare = super.run();
+            protected RepositoryCommitCompare run(Account account)
+                    throws Exception {
+                RepositoryCommitCompare compare = super.run(account);
 
                 List<CommitFile> files = compare.getFiles();
                 diffStyler.setFiles(files);
@@ -112,6 +112,13 @@ public class CommitCompareListFragment extends DialogFragment implements
                 updateList(compare);
             }
 
+            @Override
+            protected void onException(Exception e) throws RuntimeException {
+                super.onException(e);
+
+                ToastUtils.show(getActivity(), e, string.error_commits_load);
+            }
+
         }.execute();
     }
 
@@ -124,6 +131,7 @@ public class CommitCompareListFragment extends DialogFragment implements
 
         LayoutInflater inflater = getActivity().getLayoutInflater();
         adapter.clearHeaders();
+        adapter.getWrappedAdapter().clear();
 
         List<RepositoryCommit> commits = compare.getCommits();
         if (commits != null && !commits.isEmpty()) {
@@ -133,58 +141,34 @@ public class CommitCompareListFragment extends DialogFragment implements
                     .setText(MessageFormat.format("Comparing {0} commits",
                             commits.size()));
             adapter.addHeader(commitHeader, null, false);
-
+            adapter.addHeader(inflater.inflate(layout.list_divider, null));
             CommitListAdapter commitAdapter = new CommitListAdapter(
                     layout.commit_item, inflater, commits, avatars);
             for (int i = 0; i < commits.size(); i++) {
                 RepositoryCommit commit = commits.get(i);
                 View view = commitAdapter.getView(i, null, null);
                 adapter.addHeader(view, commit, true);
+                adapter.addHeader(inflater.inflate(layout.list_divider, null));
             }
         }
 
         List<CommitFile> files = compare.getFiles();
         if (files != null && !files.isEmpty()) {
             addFileStatHeader(files, inflater);
-            adapter.getWrappedAdapter().setItems(
-                    files.toArray(new CommitFile[files.size()]));
-        } else
-            adapter.getWrappedAdapter().setItems(null);
+            for (CommitFile file : files)
+                adapter.getWrappedAdapter().addItem(file);
+        }
+
+        adapter.addFooter(inflater.inflate(layout.footer_separator, null));
     }
 
     private void addFileStatHeader(List<CommitFile> files,
             LayoutInflater inflater) {
-        StyledText fileDetails = new StyledText();
-        int added = 0;
-        int deleted = 0;
-        int changed = files.size();
-        for (CommitFile file : files) {
-            added += file.getAdditions();
-            deleted += file.getDeletions();
-        }
-
-        if (changed > 1)
-            fileDetails.bold(FORMAT.format(changed)).bold(" changed files");
-        else
-            fileDetails.bold("1 changed files");
-        fileDetails.append(" with ");
-
-        if (added != 1)
-            fileDetails.bold(FORMAT.format(added)).bold(" additions");
-        else
-            fileDetails.bold("1 addition ");
-        fileDetails.append(" and ");
-
-        if (deleted != 1)
-            fileDetails.bold(FORMAT.format(deleted)).bold(" deletion");
-        else
-            fileDetails.bold("1 deletion");
-
-        View fileHeader = inflater.inflate(layout.commit_file_details_header,
-                null);
+        View fileHeader = inflater.inflate(
+                layout.commit_compare_file_details_header, null);
         ((TextView) fileHeader.findViewById(id.tv_commit_file_summary))
-                .setText(fileDetails);
-        adapter.addHeader(fileHeader, null, false);
+                .setText(CommitUtils.formatStats(files));
+        adapter.addHeader(fileHeader);
     }
 
     @Override
@@ -193,15 +177,15 @@ public class CommitCompareListFragment extends DialogFragment implements
 
         list.setOnItemClickListener(this);
         adapter = new HeaderFooterListAdapter<CommitFileListAdapter>(list,
-                new CommitFileListAdapter(layout.commit_file_item,
-                        getActivity().getLayoutInflater(), diffStyler));
+                new CommitFileListAdapter(getActivity().getLayoutInflater(),
+                        diffStyler, null, null));
         list.setAdapter(adapter);
     }
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
             Bundle savedInstanceState) {
-        return inflater.inflate(layout.item_list, container);
+        return inflater.inflate(layout.commit_diff_list, container);
     }
 
     @Override
@@ -211,5 +195,8 @@ public class CommitCompareListFragment extends DialogFragment implements
         if (item instanceof RepositoryCommit)
             startActivity(CommitViewActivity.createIntent(repository,
                     ((RepositoryCommit) item).getSha()));
+        else if (item instanceof CommitFile)
+            startActivity(CommitFileViewActivity.createIntent(repository, base,
+                    (CommitFile) item));
     }
 }
